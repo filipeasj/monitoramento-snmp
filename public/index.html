@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10243a">
+  <title>Monitoramento de Roteador via SNMP</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/chart.umd.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">SN</div>
+    <div class="brand-copy">
+      <h1>Monitoramento SNMP</h1>
+      <p>Filipe Alves e Arthur Mendes</p>
+    </div>
+    <div class="connection-area">
+      <span id="statusIndicator" class="status-chip status-stopped"><span class="status-dot"></span> Coleta pausada</span>
+      <span id="lastCollection" class="last-update">Nenhuma coleta realizada</span>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <nav class="tabs" aria-label="Áreas do sistema">
+      <button type="button" class="tab active" data-view="live">Tempo real</button>
+      <button type="button" class="tab" data-view="history">Histórico</button>
+      <button type="button" class="tab" data-view="config">Configuração</button>
+    </nav>
+
+    <section id="view-live" class="view active" aria-labelledby="liveTitle">
+      <div class="section-heading heading-row">
+        <div>
+          <p class="eyebrow">MONITORAMENTO</p>
+          <h2 id="liveTitle">Visão em tempo real</h2>
+          <p class="muted">Os gráficos são atualizados com as amostras recebidas do roteador.</p>
+        </div>
+        <div class="control-row">
+          <button id="startBtn" class="button button-primary" type="button">Iniciar</button>
+          <button id="pauseBtn" class="button button-secondary" type="button">Pausar</button>
+          <button id="resetBtn" class="button button-quiet" type="button">Resetar visualização</button>
+        </div>
+      </div>
+
+      <div id="liveMessage" class="inline-message" role="status">Configure o equipamento na aba Configuração antes de iniciar a coleta.</div>
+
+      <div class="metric-grid">
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-label">Tráfego de entrada (IN)</span><span class="metric-symbol symbol-blue">↓</span></div>
+          <div id="currentIn" class="metric-value">—</div>
+          <div class="metric-unit">bits por segundo (bps)</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-label">Tráfego de saída (OUT)</span><span class="metric-symbol symbol-violet">↑</span></div>
+          <div id="currentOut" class="metric-value">—</div>
+          <div class="metric-unit">bits por segundo (bps)</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-label">Utilização da CPU</span><span class="metric-symbol symbol-green">%</span></div>
+          <div id="currentCpu" class="metric-value">—</div>
+          <div class="metric-unit">percentual (%)</div>
+        </article>
+      </div>
+
+      <div class="chart-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Tráfego da interface</h3><p>Entrada e saída por amostra</p></div><span class="chart-unit">bps</span></div>
+          <div class="chart-wrap"><canvas id="liveTrafficChart" aria-label="Gráfico de tráfego IN e OUT em tempo real"></canvas></div>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Utilização da CPU</h3><p>Percentual reportado pelo equipamento</p></div><span class="chart-unit">%</span></div>
+          <div class="chart-wrap"><canvas id="liveCpuChart" aria-label="Gráfico de utilização da CPU em tempo real"></canvas></div>
+        </article>
+      </div>
+
+      <div class="two-column-bottom">
+        <article class="panel panel-padding">
+          <div class="panel-heading"><div><h3>Estado da coleta</h3><p>Última informação do serviço</p></div></div>
+          <p id="collectorError" class="collector-error hidden"></p>
+          <dl class="status-list">
+            <div><dt>Equipamento</dt><dd id="statusHost">Não configurado</dd></div>
+            <div><dt>Interface</dt><dd id="statusInterface">—</dd></div>
+            <div><dt>Intervalo</dt><dd id="statusInterval">—</dd></div>
+          </dl>
+        </article>
+        <article class="panel panel-padding">
+          <div class="panel-heading"><div><h3>Eventos recentes</h3><p>Alertas e falhas reportados pelo sistema</p></div></div>
+          <div id="recentEvents" class="event-list"><p class="empty-line">Nenhum evento registrado nesta sessão.</p></div>
+        </article>
+      </div>
+      <p class="footnote">Resetar limpa somente a série exibida nesta visualização em tempo real. As amostras já gravadas continuam no histórico.</p>
+    </section>
+
+    <section id="view-history" class="view" aria-labelledby="historyTitle" hidden>
+      <div class="section-heading">
+        <p class="eyebrow">CONSULTA</p>
+        <h2 id="historyTitle">Histórico de amostras</h2>
+        <p class="muted">Selecione o período para consultar os dados persistidos, inclusive após reiniciar a aplicação.</p>
+      </div>
+      <form id="historyFilter" class="panel filter-panel">
+        <div class="field-grid field-grid-history">
+          <label class="field"><span>Data/hora inicial</span><input id="historyStart" type="datetime-local"></label>
+          <label class="field"><span>Data/hora final</span><input id="historyEnd" type="datetime-local"></label>
+          <div class="field action-field"><span aria-hidden="true">&nbsp;</span><button class="button button-primary" type="submit">Aplicar período</button></div>
+        </div>
+      </form>
+      <div class="history-summary"><span id="historyPeriod">Período não consultado</span><span id="historyCount">0 amostras</span></div>
+      <div id="historyError" class="inline-message inline-error hidden" role="alert"></div>
+      <div id="noDataHistory" class="empty-state" hidden>
+        <div class="empty-icon" aria-hidden="true">⌁</div><h3>Nenhuma amostra encontrada</h3><p>Não há dados para o período selecionado. Ajuste as datas ou inicie uma coleta.</p>
+      </div>
+      <div id="historyCharts" class="chart-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Histórico de tráfego</h3><p>Séries IN e OUT ao longo do período</p></div><span class="chart-unit">bps</span></div>
+          <div class="chart-wrap"><canvas id="historyTrafficChart" aria-label="Gráfico histórico de tráfego IN e OUT"></canvas></div>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h3>Histórico de CPU</h3><p>Utilização percentual ao longo do período</p></div><span class="chart-unit">%</span></div>
+          <div class="chart-wrap"><canvas id="historyCpuChart" aria-label="Gráfico histórico de utilização da CPU"></canvas></div>
+        </article>
+      </div>
+      <article id="historyTablePanel" class="panel table-panel">
+        <div class="panel-heading"><div><h3>Horários das amostras</h3><p>Os horários são exibidos no fuso local do navegador.</p></div></div>
+        <div class="table-scroll"><table><thead><tr><th>Data e hora</th><th>IN (bps)</th><th>OUT (bps)</th><th>CPU (%)</th><th>Observações</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+      </article>
+    </section>
+
+    <section id="view-config" class="view" aria-labelledby="configTitle" hidden>
+      <div class="section-heading">
+        <p class="eyebrow">PARÂMETROS</p>
+        <h2 id="configTitle">Configuração do monitoramento</h2>
+        <p class="muted">As configurações ficam em arquivo local. Não publique credenciais em repositórios.</p>
+      </div>
+      <div id="configMessage" class="inline-message hidden" role="status"></div>
+      <form id="configForm" class="config-form">
+        <article class="panel form-panel">
+          <div class="form-section-heading"><span class="step-number">01</span><div><h3>Equipamento e SNMP</h3><p>Dados necessários para consultar o roteador.</p></div></div>
+          <div class="field-grid">
+            <label class="field"><span>Endereço do roteador</span><input id="routerHost" name="routerHost" type="text" placeholder="192.168.1.1" required></label>
+            <label class="field"><span>Versão SNMP</span><select id="snmpVersion" name="snmpVersion"><option value="1">SNMPv1</option><option value="2c">SNMPv2c</option><option value="v3">SNMPv3</option></select></label>
+            <label class="field"><span>Porta SNMP</span><input id="snmpPort" type="number" min="1" max="65535" step="1" required></label>
+            <label class="field"><span>Timeout (ms)</span><input id="timeoutMs" type="number" min="500" max="120000" step="100" required></label>
+            <label id="communityField" class="field"><span>Comunidade de leitura</span><input id="community" type="password" autocomplete="new-password" placeholder="Ex.: comunidade de leitura"></label>
+            <label class="field"><span>Índice da interface (ifIndex)</span><input id="interfaceIndex" type="number" min="1" step="1" list="interfaceOptions" required><datalist id="interfaceOptions"></datalist><small>Busque as interfaces ou informe o índice disponibilizado pelo equipamento.</small></label>
+            <div class="field field-button"><span>Identificar interfaces</span><button id="discoverInterfacesBtn" class="button button-secondary" type="button">Buscar interfaces via SNMP</button><small id="interfaceHelp">A consulta usa os dados preenchidos acima.</small></div>
+            <label class="field field-span-2"><span>OID de CPU</span><input id="cpuOid" type="text" required value="1.3.6.1.2.1.25.3.3.1.2"><small>Valor padrão: raiz de hrProcessorLoad (HOST-RESOURCES-MIB). Se o roteador usar outra MIB/OID, informe o OID suportado por ele.</small></label>
+          </div>
+          <div id="v3Fields" class="subpanel hidden">
+            <h4>Credenciais SNMPv3</h4>
+            <div class="field-grid">
+              <label class="field"><span>Usuário</span><input id="v3Username" type="text" autocomplete="off"></label>
+              <label class="field"><span>Nível de segurança</span><select id="v3SecurityLevel"><option value="noAuthNoPriv">Sem autenticação e sem privacidade</option><option value="authNoPriv">Com autenticação, sem privacidade</option><option value="authPriv">Com autenticação e privacidade</option></select></label>
+              <label id="v3AuthProtocolField" class="field"><span>Protocolo de autenticação</span><select id="v3AuthProtocol"><option value="sha">SHA</option><option value="md5">MD5</option></select></label>
+              <label id="v3AuthKeyField" class="field"><span>Chave de autenticação</span><input id="v3AuthKey" type="password" autocomplete="new-password"></label>
+              <label id="v3PrivProtocolField" class="field"><span>Protocolo de privacidade</span><select id="v3PrivProtocol"><option value="aes">AES</option><option value="des">DES</option></select></label>
+              <label id="v3PrivKeyField" class="field"><span>Chave de privacidade</span><input id="v3PrivKey" type="password" autocomplete="new-password"></label>
+              <label class="field field-span-2"><span>Contexto (opcional)</span><input id="v3Context" type="text"></label>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel form-panel">
+          <div class="form-section-heading"><span class="step-number">02</span><div><h3>Coleta e thresholds</h3><p>Intervalo e limites para avaliação durante a coleta em tempo real.</p></div></div>
+          <div class="field-grid">
+            <label class="field"><span>Intervalo de coleta (segundos)</span><input id="intervalSeconds" type="number" min="0" step="any" required><small>Precisa ser maior que zero.</small></label>
+            <label class="field"><span>Threshold de CPU (%)</span><input id="thresholdCpuPercent" type="number" min="0" max="100" step="any" placeholder="Desativado"><small>Vazio significa que não há limite configurado.</small></label>
+            <label class="field"><span>Threshold de tráfego IN (bps)</span><input id="thresholdInBps" type="number" min="0" step="any" placeholder="Desativado"></label>
+            <label class="field"><span>Threshold de tráfego OUT (bps)</span><input id="thresholdOutBps" type="number" min="0" step="any" placeholder="Desativado"></label>
+          </div>
+          <p class="note-line"><strong>Comportamento adotado:</strong> os limites de tráfego IN e OUT são independentes. O alerta ocorre quando o valor fica acima do limite; um novo alerta só é emitido após a recuperação para o limite ou abaixo dele e uma nova ultrapassagem.</p>
+        </article>
+
+        <article class="panel form-panel">
+          <div class="form-section-heading"><span class="step-number">03</span><div><h3>Notificações</h3><p>Escolha um ou os dois canais para receber alertas.</p></div></div>
+          <div class="checkbox-grid">
+            <label class="check-option"><input id="alertPopup" type="checkbox"><span><strong>Pop-up na aplicação</strong><small>Exibe uma notificação visível com métrica, valor, limite e horário.</small></span></label>
+            <label class="check-option"><input id="alertEmail" type="checkbox"><span><strong>Enviar por e-mail</strong><small>Envia os mesmos dados ao endereço configurado.</small></span></label>
+          </div>
+          <div class="field-grid email-grid">
+            <label class="field"><span>Endereço de e-mail de destino</span><input id="emailTo" type="email" placeholder="destinatario@exemplo.com"><small>Validado antes de salvar quando preenchido e obrigatório se o alerta por e-mail estiver habilitado.</small></label>
+          </div>
+          <div class="smtp-note"><strong>Configuração SMTP:</strong> para o envio funcionar, preencha as variáveis SMTP no arquivo <code>.env</code>, conforme o <code>.env.example</code> e o README. Não coloque a senha SMTP no repositório.</div>
+        </article>
+
+        <div class="form-actions"><span id="configSaveHint" class="muted small-text">As alterações são aplicadas à próxima coleta.</span><button type="submit" id="saveConfigBtn" class="button button-primary">Salvar configuração</button></div>
+      </form>
+    </section>
+
+    <footer class="app-footer"><span>Projeto e Administração de Redes</span><span>Dados persistidos localmente em arquivo</span></footer>
+  </main>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+</body>
+</html>

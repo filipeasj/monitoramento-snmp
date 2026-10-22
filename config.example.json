@@ -1,0 +1,25 @@
+{
+  "routerHost": "192.168.1.1",
+  "snmpVersion": "2c",
+  "snmpPort": 161,
+  "timeoutMs": 3000,
+  "community": "",
+  "interfaceIndex": 1,
+  "intervalSeconds": 5,
+  "cpuOid": "1.3.6.1.2.1.25.3.3.1.2",
+  "thresholdInBps": null,
+  "thresholdOutBps": null,
+  "thresholdCpuPercent": null,
+  "alertPopup": true,
+  "alertEmail": false,
+  "emailTo": "",
+  "v3": {
+    "username": "",
+    "securityLevel": "authPriv",
+    "authProtocol": "sha",
+    "authKey": "",
+    "privProtocol": "aes",
+    "privKey": "",
+    "context": ""
+  }
+}
